@@ -1,0 +1,49 @@
+name: Verify ROS Python PR source revisions
+on:
+  push:
+    branches: [verify-ros-python-prs]
+permissions:
+  contents: read
+jobs:
+  build-test:
+    name: ${{ matrix.repo }} PR ${{ matrix.pr }} rolling build and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - repo: le700/launch
+            pr: 1019
+            sha: 71a1053a36078980069a5269f5c064c2907a3e1f
+          - repo: le700/launch
+            pr: 1020
+            sha: b540fefbf75ad063887a8e95c4ac8957e44532dc
+          - repo: le700/launch
+            pr: 1021
+            sha: d43fbfe0c84baa5b02f4da9ce94dbfd7f5fd983e
+          - repo: le700/launch
+            pr: 1022
+            sha: c86b002f1cb2429f8361296eeda1f16fc9051a2c
+          - repo: le700/rclpy
+            pr: 1738
+            sha: dc1eb7ba778defc943eecc966bd7a395b5d7f0c6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repo }}
+          ref: ${{ matrix.sha }}
+          persist-credentials: false
+      - name: Verify exact PR source
+        env:
+          EXPECTED_SHA: ${{ matrix.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Build and test in ROS rolling
+        uses: ros-industrial/industrial_ci@master
+        env:
+          ROS_DISTRO: rolling
+          ROS_REPO: testing
+          OS_CODE_NAME: resolute
+          DOCKER_IMAGE: ghcr.io/ros-controls/ros:rolling-ubuntu-testing
+          RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
