@@ -1,0 +1,66 @@
+name: Verify Wokwi decoder with real RISC-V tools
+on:
+  push:
+    branches: [verify-wokwi-decoder-tool]
+permissions:
+  contents: read
+jobs:
+  decode:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: le700/wokwi-cli
+          ref: 7de66fb16be02e09fa65e1f9196609b0632bb82d
+          persist-credentials: false
+      - run: test "$(git rev-parse HEAD)" = 7de66fb16be02e09fa65e1f9196609b0632bb82d
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build minimal debug RISC-V 32-bit ELF
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu
+          mkdir -p .verification
+          printf 'int firmware_probe(int input) { return input + 7; }\n' > .verification/firmware.c
+          riscv64-linux-gnu-gcc -march=rv32im -mabi=ilp32 -g -O0 -ffreestanding -fno-pie -c .verification/firmware.c -o .verification/firmware.o
+          riscv64-linux-gnu-ld -m elf32lriscv -e firmware_probe -Ttext 0x42000000 .verification/firmware.o -o .verification/firmware.elf
+          riscv64-linux-gnu-readelf -h .verification/firmware.elf
+          riscv64-linux-gnu-nm .verification/firmware.elf
+      - name: Exercise decoder default runner with the real addr2line process
+        run: |
+          cat > .verification/check.mts <<'EOF'
+          import assert from 'node:assert/strict';
+          import { execFileSync } from 'node:child_process';
+          import { resolve } from 'node:path';
+          import { EspIdfBacktraceDecoder } from '../packages/cli/src/esp/backtraceDecoder.ts';
+          const elf = resolve('.verification/firmware.elf');
+          const symbols = execFileSync('riscv64-linux-gnu-nm', [elf], { encoding: 'utf8' });
+          const address = symbols.match(/^([0-9a-f]+) T firmware_probe$/m)?.[1];
+          assert.ok(address, 'The independently compiled firmware symbol must exist');
+          const direct = execFileSync('riscv64-linux-gnu-addr2line', ['-pfiaC', '-e', elf, `0x${address}`], { encoding: 'utf8' });
+          assert.match(direct, /firmware_probe at .*firmware\.c:1/);
+          await new Promise<void>((resolveCheck, reject) => {
+            const deadline = setTimeout(() => reject(new Error('Real decoder subprocess timed out')), 10000);
+            const decoder = new EspIdfBacktraceDecoder('riscv64-linux-gnu-addr2line', elf, {
+              onDecoded: output => {
+                clearTimeout(deadline);
+                try {
+                  assert.match(output, /^Decoded ESP-IDF backtrace:/);
+                  assert.match(output, /firmware_probe at .*firmware\.c:1/);
+                  console.log(output);
+                  resolveCheck();
+                } catch (error) { reject(error); }
+              },
+              onWarning: warning => { clearTimeout(deadline); reject(new Error(warning)); },
+            });
+            decoder.write(new TextEncoder().encode('Backtr'));
+            decoder.write(new TextEncoder().encode(`ace: 0x${address}:0x3ffb1230\r\n`));
+          });
+          console.log('Real RISC-V32 ELF / GNU addr2line default runner check passed');
+          EOF
+          pnpm exec tsx .verification/check.mts
