@@ -1,0 +1,43 @@
+name: Verify exact Radix PRs on Linux
+on:
+  push:
+    branches: [verify-radix-browser-ci]
+permissions:
+  contents: read
+jobs:
+  verify:
+    name: PR ${{ matrix.pr }} upstream build and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - pr: 4159
+            sha: 434443160e3e269f21b733e33e0df7b251f7ca90
+          - pr: 4160
+            sha: a0c81af013d6f6c5909be93ac1fafdbb4fffec8b
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: le700/primitives
+          ref: ${{ matrix.sha }}
+          persist-credentials: false
+      - name: Verify exact source
+        env:
+          EXPECTED_SHA: ${{ matrix.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: ./.github/actions/ci-setup
+      - run: pnpm lint
+      - run: node scripts/check-composed-refs.mjs
+      - run: pnpm build:ci
+      - run: pnpm test:ci
+      - name: Save browser diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: radix-${{ matrix.pr }}-browser-diagnostics
+          path: |
+            test-results/
+            playwright-report/
