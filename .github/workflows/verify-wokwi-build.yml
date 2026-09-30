@@ -1,0 +1,43 @@
+name: Verify Wokwi backtrace PR packaging and browsers
+on:
+  push:
+    branches: [verify-wokwi-build]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: le700/wokwi-cli
+          ref: 7de66fb16be02e09fa65e1f9196609b0632bb82d
+          persist-credentials: false
+      - name: Verify exact PR source
+        run: test "$(git rev-parse HEAD)" = 7de66fb16be02e09fa65e1f9196609b0632bb82d
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm exec playwright install --with-deps
+      - run: pnpm run format:check
+      - run: pnpm run lint
+      - name: Package CLI for all upstream target platforms
+        run: pnpm --filter @wokwi/cli run package
+      - name: Pack workspace packages
+        run: pnpm -r pack
+      - run: pnpm run test:vitest
+      - name: Run all three browser embed projects
+        run: pnpm run test:embed:playwright
+      - name: Preserve browser failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wokwi-browser-diagnostics
+          path: |
+            playwright-report/
+            test-results/
