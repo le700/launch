@@ -1,0 +1,53 @@
+name: Verify VS Code references extension PR builds
+on:
+  push:
+    branches: [verify-vscode-references]
+permissions:
+  contents: read
+jobs:
+  compile:
+    name: PR ${{ matrix.pr }} official extension compile
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - pr: 338453
+            sha: 26e6287b1505726b3056c27d78fd771c96e53cf6
+          - pr: 338477
+            sha: 7e4b1d589edf82969fb2f33236dafbdc376a156b
+          - pr: 338496
+            sha: 530244cff7ec23cadfe000b0685fbb6d5d5179a7
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: le700/vscode
+          ref: ${{ matrix.sha }}
+          persist-credentials: false
+      - name: Verify exact PR source
+        env:
+          EXPECTED_SHA: ${{ matrix.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            build/package-lock.json
+      - name: Install locked build dependencies without product downloads
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm ci --prefix build --ignore-scripts --no-audit --no-fund
+          npm ci --prefix extensions/references-view --ignore-scripts --no-audit --no-fund
+      - name: Official references-view extension build
+        run: npm run gulp -- compile-extension:references-view
+      - name: Verify extension build output
+        run: test -s extensions/references-view/out/extension.js
+      - name: Official extension web typecheck
+        run: npm run typecheck-web --prefix extensions/references-view
