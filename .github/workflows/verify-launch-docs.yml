@@ -1,0 +1,29 @@
+name: Verify launch documentation PR
+on:
+  push:
+    branches: [verify-launch-docs]
+permissions:
+  contents: read
+jobs:
+  docs:
+    runs-on: ubuntu-24.04
+    container: ghcr.io/ros-controls/ros:rolling-ubuntu-testing
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: c86b002f1cb2429f8361296eeda1f16fc9051a2c
+          persist-credentials: false
+      - name: Install documentation dependencies
+        run: |
+          apt-get update
+          apt-get install -y python3-sphinx python3-lark python3-osrf-pycommon python3-yaml python3-typing-extensions ros-rolling-ament-index-python
+      - name: Build exact PR documentation and inspect output
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = c86b002f1cb2429f8361296eeda1f16fc9051a2c
+          source /opt/ros/rolling/setup.bash
+          export PYTHONPATH="$PWD/launch:${PYTHONPATH:-}"
+          sphinx-build -b html launch/doc/source /tmp/launch-docs
+          test -s /tmp/launch-docs/architecture.html
+          grep -q OpaqueFunction /tmp/launch-docs/architecture.html
