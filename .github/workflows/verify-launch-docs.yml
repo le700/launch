@@ -21,6 +21,7 @@ jobs:
       - name: Build exact PR documentation and inspect output
         shell: bash
         run: |
+          git config --global --add safe.directory "$PWD"
           test "$(git rev-parse HEAD)" = c86b002f1cb2429f8361296eeda1f16fc9051a2c
           source /opt/ros/rolling/setup.bash
           export PYTHONPATH="$PWD/launch:${PYTHONPATH:-}"
