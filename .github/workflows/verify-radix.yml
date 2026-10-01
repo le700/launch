@@ -1,7 +1,7 @@
-name: Verify exact Radix PRs on Linux
+name: Verify Radix touch-scroll repair on Linux
 on:
   push:
-    branches: [verify-radix-browser-ci]
+    branches: [verify-radix-touch-ci]
 permissions:
   contents: read
 jobs:
@@ -14,10 +14,8 @@ jobs:
       max-parallel: 1
       matrix:
         include:
-          - pr: 4159
-            sha: 434443160e3e269f21b733e33e0df7b251f7ca90
-          - pr: 4160
-            sha: a0c81af013d6f6c5909be93ac1fafdbb4fffec8b
+          - pr: touch-scroll-repair
+            sha: 1c2b009f1041a9ed23b402564a49b635f7ea7f2a
     steps:
       - uses: actions/checkout@v6
         with:
@@ -29,6 +27,8 @@ jobs:
           EXPECTED_SHA: ${{ matrix.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - uses: ./.github/actions/ci-setup
+      - run: pnpm exec oxfmt --check playwright.config.ts e2e/select.spec.ts
+      - run: pnpm types:check
       - run: pnpm lint
       - run: node scripts/check-composed-refs.mjs
       - run: pnpm build:ci
